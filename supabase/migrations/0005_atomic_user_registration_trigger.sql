@@ -53,7 +53,7 @@ CREATE TABLE IF NOT EXISTS public.driver_profiles (
         CONSTRAINT valid_driver_status CHECK (
             driver_status IN ('offline', 'online', 'busy', 'suspended')
         ),
-    current_location    GEOGRAPHY(POINT, 4326),
+    current_location    TEXT,
     last_location_at   TIMESTAMPTZ,
     rating_average    DECIMAL(3, 2) DEFAULT 5.00
         CONSTRAINT valid_rating CHECK (rating_average BETWEEN 1.00 AND 5.00),
