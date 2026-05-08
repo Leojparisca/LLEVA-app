@@ -2,124 +2,186 @@ import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import { supabase } from '@/lib/supabase'
-import type { UserRole } from '@lleva/shared-types'
 import type { Session } from '@supabase/supabase-js'
+import type { UserRole } from '@lleva/shared-types'
 
-interface AuthUser {
-  id:        string
-  email:     string
-  full_name: string
-  role:      UserRole
-  avatar_url?: string
+interface PersistedUser {
+  id:         string
+  email:      string
+  full_name:  string
+  phone:      string | null
+  avatar_url: string | null
+  role:       UserRole
 }
 
 interface AuthState {
-  user:        AuthUser | null
-  session:     Session | null
-  isLoading:   boolean
-  isHydrated:  boolean
-  error:       string | null
+  user:       PersistedUser | null
+  session:    Session | null
+  isLoading:  boolean
+  isReady:    boolean
+  error:      string | null
 
+  initialize:  () => Promise<void>
   setSession:  (session: Session | null) => Promise<void>
-  signOut:    () => Promise<void>
+  signOut:     () => Promise<void>
   clearError:  () => void
-  setHydrated: () => void
+}
+
+async function fetchUserData(userId: string): Promise<PersistedUser | null> {
+  const { data, error } = await supabase
+    .from('user_roles')
+    .select(`
+      role,
+      profile:profiles!user_id (
+        id,
+        full_name,
+        phone,
+        avatar_url
+      )
+    `)
+    .eq('user_id', userId)
+    .eq('is_active', true)
+    .order('granted_at', { ascending: false })
+    .limit(1)
+    .single()
+
+  if (error || !data || !data.profile) {
+    console.error('[fetchUserData] Error:', error?.message ?? 'No profile found')
+    return null
+  }
+
+  const profile = Array.isArray(data.profile) ? data.profile[0] : data.profile
+  if (!profile) return null
+
+  return {
+    id:         profile.id,
+    email:      '',
+    full_name:  profile.full_name,
+    phone:      profile.phone ?? null,
+    avatar_url: profile.avatar_url ?? null,
+    role:       data.role as UserRole,
+  }
 }
 
 export const useAuthStore = create<AuthState>()(
   persist(
     (set, get) => ({
-      user:       null,
-      session:    null,
-      isLoading:  false,
-      isHydrated: false,
-      error:      null,
+      user:      null,
+      session:   null,
+      isLoading: false,
+      isReady:   false,
+      error:     null,
+
+      initialize: async () => {
+        const { data: { session } } = await supabase.auth.getSession()
+
+        if (session) {
+          await get().setSession(session)
+        } else {
+          set({ isReady: true })
+        }
+
+        supabase.auth.onAuthStateChange(async (_event, session) => {
+          await get().setSession(session)
+        })
+      },
 
       setSession: async (session) => {
         if (!session) {
-          set({ user: null, session: null, isLoading: false })
+          set({
+            user:      null,
+            session:   null,
+            isLoading: false,
+            isReady:   true,
+            error:     null,
+          })
           return
         }
 
         set({ isLoading: true, error: null })
 
         try {
-          const [profileRes, roleRes] = await Promise.all([
-            supabase
-              .from('profiles')
-              .select('full_name, avatar_url')
-              .eq('id', session.user.id)
-              .single(),
-            supabase
-              .from('user_roles')
-              .select('role')
-              .eq('user_id', session.user.id)
-              .eq('is_active', true)
-              .order('granted_at', { ascending: false })
-              .limit(1)
-              .single(),
-          ])
+          const userData = await fetchUserData(session.user.id)
 
-          if (profileRes.error || roleRes.error) {
-            throw new Error('Failed to fetch user data')
+          if (!userData) {
+            throw new Error('User profile not found after registration')
           }
 
           set({
             session,
             user: {
-              id:         session.user.id,
-              email:      session.user.email!,
-              full_name:  profileRes.data.full_name,
-              role:       roleRes.data.role as UserRole,
-              avatar_url: profileRes.data.avatar_url,
+              ...userData,
+              email: session.user.email ?? '',
             },
             isLoading: false,
+            isReady:   true,
+            error:     null,
           })
-        } catch (error) {
+
+        } catch (err) {
+          const message = err instanceof Error ? err.message : 'Session error'
+          console.error('[useAuthStore][setSession]', message)
+
           await supabase.auth.signOut()
           set({
             user:      null,
             session:   null,
             isLoading: false,
-            error:     'Session error. Please sign in again.',
+            isReady:   true,
+            error:     'Sesión inválida. Por favor inicia sesión de nuevo.',
           })
         }
       },
 
       signOut: async () => {
         set({ isLoading: true })
-        await supabase.auth.signOut()
-        set({ user: null, session: null, isLoading: false, error: null })
+        const { error } = await supabase.auth.signOut()
+
+        if (error) {
+          console.error('[useAuthStore][signOut]', error.message)
+        }
+
+        set({
+          user:      null,
+          session:   null,
+          isLoading: false,
+          error:     null,
+        })
       },
 
-      clearError:   () => set({ error: null }),
-      setHydrated:  () => set({ isHydrated: true }),
+      clearError: () => set({ error: null }),
     }),
+
     {
-      name:    'lleva-auth-store',
+      name: 'lleva-auth-v2',
       storage: createJSONStorage(() => AsyncStorage),
-      partialize: (state) => ({
-        user: state.user
-          ? {
-              id:         state.user.id,
-              email:      state.user.email,
-              full_name:  state.user.full_name,
-              role:       state.user.role,
-              avatar_url: state.user.avatar_url,
-            }
-          : null,
+      partialize: (state): Pick<AuthState, 'user'> => ({
+        user: state.user,
       }),
-      onRehydrateStorage: () => (state) => {
-        state?.setHydrated()
+      onRehydrateStorage: () => (state, error) => {
+        if (error) {
+          console.error('[useAuthStore] Rehydration error:', error)
+        }
+      },
+      version: 2,
+      migrate: (persistedState: unknown, version: number) => {
+        if (version === 1) {
+          return { user: null }
+        }
+        return persistedState as Partial<AuthState>
       },
     }
   )
 )
 
-export const useAuthUser    = () => useAuthStore((s) => s.user)
-export const useUserRole    = () => useAuthStore((s) => s.user?.role ?? null)
-export const useIsDriver    = () => useAuthStore((s) => s.user?.role === 'driver')
-export const useIsPassenger = () => useAuthStore((s) => s.user?.role === 'passenger')
-export const useIsAdmin     = () => useAuthStore((s) =>
+export const useAuthUser      = () => useAuthStore((s) => s.user)
+export const useAuthSession   = () => useAuthStore((s) => s.session)
+export const useIsReady       = () => useAuthStore((s) => s.isReady)
+export const useIsLoading     = () => useAuthStore((s) => s.isLoading)
+export const useAuthError     = () => useAuthStore((s) => s.error)
+export const useUserRole      = () => useAuthStore((s) => s.user?.role ?? null)
+export const useIsPassenger   = () => useAuthStore((s) => s.user?.role === 'passenger')
+export const useIsDriver      = () => useAuthStore((s) => s.user?.role === 'driver')
+export const useIsAdminPanel  = () => useAuthStore((s) =>
   ['admin', 'owner', 'staff'].includes(s.user?.role ?? '')
 )
