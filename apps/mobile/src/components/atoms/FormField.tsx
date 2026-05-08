@@ -1,11 +1,12 @@
 import React, { useState } from 'react'
-import { View, Text, TextInput, TouchableOpacity } from 'react-native'
+import { View, Text, TextInput, TouchableOpacity, StyleSheet } from 'react-native'
 import { Eye, EyeOff } from 'lucide-react-native'
+import { LLEVA_COLORS } from '@lleva/shared-constants'
 
 interface FormFieldProps extends React.ComponentProps<typeof TextInput> {
-  label:       string
-  error?:      string
-  hint?:       string
+  label: string
+  error?: string
+  hint?: string
   isRequired?: boolean
   isPassword?: boolean
 }
@@ -22,26 +23,27 @@ export function FormField({
   const hasError = Boolean(error)
 
   return (
-    <View className="mb-4 w-full">
-      <View className="mb-1.5 flex-row">
-        <Text className="text-sm font-medium text-neutral-700">
+    <View style={styles.container}>
+      <View style={styles.labelRow}>
+        <Text style={styles.label}>
           {label}
         </Text>
         {isRequired && (
-          <Text className="ml-1 text-sm text-red-500">*</Text>
+          <Text style={styles.required}>*</Text>
         )}
       </View>
 
       <View
-        className={`flex-row items-center rounded-xl border px-4 ${
+        style={[
+          styles.inputContainer,
           hasError
-            ? 'border-red-500 bg-red-50'
-            : 'border-neutral-300 bg-white'
-        }`}
+            ? { borderColor: LLEVA_COLORS.semantic.error, backgroundColor: LLEVA_COLORS.semantic.errorLight }
+            : { borderColor: LLEVA_COLORS.neutral[300], backgroundColor: LLEVA_COLORS.neutral[0] },
+        ]}
       >
         <TextInput
-          className="flex-1 py-3.5 text-base text-neutral-900"
-          placeholderTextColor="#94a3b8"
+          style={styles.input}
+          placeholderTextColor={LLEVA_COLORS.neutral[400]}
           secureTextEntry={isPassword && !showPassword}
           accessibilityLabel={label}
           accessibilityHint={hint}
@@ -55,20 +57,54 @@ export function FormField({
             accessibilityLabel={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
           >
             {showPassword
-              ? <EyeOff size={20} color="#64748b" />
-              : <Eye size={20} color="#64748b" />
+              ? <EyeOff size={20} color={LLEVA_COLORS.neutral[500]} />
+              : <Eye size={20} color={LLEVA_COLORS.neutral[500]} />
             }
           </TouchableOpacity>
         )}
       </View>
 
       {hasError ? (
-        <Text className="mt-1 text-xs text-red-500" accessibilityRole="alert">
+        <Text style={styles.error} accessibilityRole="alert">
           {error}
         </Text>
       ) : hint ? (
-        <Text className="mt-1 text-xs text-neutral-500">{hint}</Text>
+        <Text style={styles.hint}>{hint}</Text>
       ) : null}
     </View>
   )
 }
+
+const styles = StyleSheet.create({
+  container: { marginBottom: 16, width: '100%' },
+  labelRow: { flexDirection: 'row', marginBottom: 6 },
+  label: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: LLEVA_COLORS.text.primary,
+  },
+  required: { marginLeft: 4, fontSize: 14, color: LLEVA_COLORS.semantic.error },
+  inputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+  },
+  input: {
+    flex: 1,
+    paddingVertical: 14,
+    fontSize: 16,
+    color: LLEVA_COLORS.text.primary,
+  },
+  error: {
+    marginTop: 4,
+    fontSize: 12,
+    color: LLEVA_COLORS.semantic.error,
+  },
+  hint: {
+    marginTop: 4,
+    fontSize: 12,
+    color: LLEVA_COLORS.text.secondary,
+  },
+})
