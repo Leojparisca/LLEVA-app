@@ -11,14 +11,12 @@ interface UseDriverLocationOptions {
 
 export function useDriverLocation({ isActive }: UseDriverLocationOptions) {
   const user = useAuthStore((s) => s.user)
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const watchRef = useRef<Location.LocationSubscription | null>(null)
   const lastLocRef = useRef<{ lat: number; lng: number } | null>(null)
 
   useEffect(() => {
     if (!isActive || !user || user.role !== 'driver') {
       watchRef.current?.remove()
-      if (intervalRef.current) clearInterval(intervalRef.current)
       return
     }
 
@@ -51,13 +49,12 @@ export function useDriverLocation({ isActive }: UseDriverLocationOptions) {
           lastLocRef.current = { lat: latitude, lng: longitude }
 
           const { error } = await supabase
-            .from('drivers')
+            .from('driver_profiles')
             .update({
-              current_lat: latitude,
-              current_lng: longitude,
-              location_updated_at: new Date().toISOString(),
+              current_location: `POINT(${longitude} ${latitude})`,
+              last_location_at: new Date().toISOString(),
             })
-            .eq('user_id', user.id)
+            .eq('id', user.id)
 
           if (error) {
             console.error('[useDriverLocation] Update failed:', error.message)
