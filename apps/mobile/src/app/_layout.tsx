@@ -3,24 +3,9 @@ import { ActivityIndicator, View } from 'react-native'
 import * as TaskManager from 'expo-task-manager'
 import * as Location from 'expo-location'
 import { useAuthStore } from '@/store/auth.store'
-import { useDriverLocation } from '@/hooks/useDriverLocation'
+import { useDriverLocation, BACKGROUND_LOCATION_TASK, registerBackgroundLocationTask } from '@/hooks/useDriverLocation'
 
-const LOCATION_TASK_NAME = 'background-location-task'
-
-TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
-  if (error) {
-    console.error('[BackgroundLocation] Error:', error.message)
-    return
-  }
-
-  const { locations } = data as { locations: Location.LocationObject[] }
-  if (!locations || locations.length === 0) return
-
-  const location = locations[0]
-  const { latitude, longitude } = location.coords
-
-  console.log('[BackgroundLocation]', latitude, longitude)
-})
+registerBackgroundLocationTask()
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   const { user, isReady, initialize } = useAuthStore()
@@ -33,10 +18,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     const startBackgroundLocation = async () => {
       if (!user || user.role !== 'driver') return
 
-      const isRunning = await TaskManager.isTaskRunningAsync(LOCATION_TASK_NAME)
+      const isRunning = await TaskManager.isTaskRunningAsync(BACKGROUND_LOCATION_TASK)
       if (isRunning) return
 
-      await Location.startLocationUpdatesAsync(LOCATION_TASK_NAME, {
+      await Location.startLocationUpdatesAsync(BACKGROUND_LOCATION_TASK, {
         accuracy: Location.Accuracy.Balanced,
         distanceInterval: 50,
         pausesUpdatesAutomatically: false,
@@ -49,16 +34,16 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     startBackgroundLocation()
 
     return () => {
-      Location.hasStartedLocationUpdatesAsync(LOCATION_TASK_NAME).then((hasStarted) => {
+      Location.hasStartedLocationUpdatesAsync(BACKGROUND_LOCATION_TASK).then((hasStarted) => {
         if (hasStarted) {
-          Location.stopLocationUpdatesAsync(LOCATION_TASK_NAME)
+          Location.stopLocationUpdatesAsync(BACKGROUND_LOCATION_TASK)
         }
       })
     }
   }, [user?.id, user?.role])
 
   const isDriverActive = user?.role === 'driver'
-  useDriverLocation({ isActive: isDriverActive })
+  useDriverLocation({ isTracking: isDriverActive })
 
   if (!isReady) {
     return (
